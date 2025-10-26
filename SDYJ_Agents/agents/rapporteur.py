@@ -251,17 +251,40 @@ class Rapporteur:
         """
         citations = []
         citation_num = 1
+        
+        # Track seen local documents to avoid duplicates
+        seen_local_docs = set()
 
         for result in results:
+            source = result.get('source', 'Unknown')
+            
             for item in result.get('results', []):
                 title = item.get('title', 'Untitled')
                 url = item.get('url', '')
-                source = result.get('source', 'Unknown')
+                
+                # For RAG/local documents, deduplicate by filename
+                if source == 'rag':
+                    # Extract filename from title (format: "本地文档: filename")
+                    if title.startswith('本地文档:'):
+                        filename = title.split('本地文档:')[-1].strip()
+                        
+                        # Skip if already seen
+                        if filename in seen_local_docs:
+                            continue
+                        seen_local_docs.add(filename)
+                        
+                        # Use cleaner title format
+                        citation_title = f"本地文档: {filename}"
+                    else:
+                        citation_title = title
+                else:
+                    citation_title = title
 
                 if url:
-                    citations.append(f"{citation_num}. {title} - {source.capitalize()} - [{url}]({url})")
+                    # Use Markdown link format for blue highlighting in terminal
+                    citations.append(f"{citation_num}. {citation_title} - {source.capitalize()} - [{url}]({url})")
                 else:
-                    citations.append(f"{citation_num}. {title} - {source.capitalize()}")
+                    citations.append(f"{citation_num}. {citation_title} - {source.capitalize()}")
 
                 citation_num += 1
 

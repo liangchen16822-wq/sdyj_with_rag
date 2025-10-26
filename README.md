@@ -20,6 +20,7 @@
 ✅ **零基础也能用**：只需要一行命令就能开始
 ✅ **多种 AI 模型**：支持 GPT、Claude、Gemini、DeepSeek 等
 ✅ **全网搜索**：自动搜索网页、学术论文等多个来源
+✅ **RAG 知识库**：📚 **新功能！** 读取本地文档，基于自己的知识库进行研究
 ✅ **人工审核**：研究计划会先让你确认,不满意可以修改
 ✅ **多种报告格式**：支持 Markdown 和 HTML 两种输出格式
 ✅ **自动生成报告**：输出漂亮的专业研究报告
@@ -149,6 +150,36 @@ python main.py research --auto-approve "区块链技术应用场景"
 | `python main.py research "问题"` | 直接开始研究 |
 | `python main.py config-info` | 查看当前配置 |
 | `python main.py list-models deepseek` | 查看可用模型 |
+
+## 📚 RAG 知识库功能（新！）
+
+现在你可以读取本地文档，基于自己的知识库进行研究！
+
+### 快速开始
+
+```bash
+# 1. 安装 RAG 依赖
+./setup_rag.sh
+
+# 2. 添加你的文档
+python -m SDYJ_Agents.cli.rag_cli add your_document.pdf
+
+# 3. 搜索文档
+python -m SDYJ_Agents.cli.rag_cli search "你的问题"
+
+# 4. 查看统计
+python -m SDYJ_Agents.cli.rag_cli stats
+```
+
+### 支持的文件格式
+- 📄 PDF (.pdf)
+- 📝 Word 文档 (.docx)
+- 📋 文本文件 (.txt)
+- 📖 Markdown (.md)
+- 🌐 HTML (.html)
+
+### 详细使用说明
+请查看 [RAG_使用说明.md](RAG_使用说明.md) 获取完整的使用指南和高级功能。
 
 ## ❓ 常见问题
 

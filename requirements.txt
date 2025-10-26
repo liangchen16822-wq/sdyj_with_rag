@@ -28,3 +28,10 @@ jinja2>=3.1.0
 
 # Utilities
 typing-extensions>=4.12.0
+
+# RAG Dependencies
+chromadb>=0.4.0
+PyPDF2>=3.0.0
+python-docx>=1.1.0
+beautifulsoup4>=4.12.0
+sentence-transformers>=2.2.0

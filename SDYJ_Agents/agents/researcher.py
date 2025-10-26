@@ -13,6 +13,13 @@ from ..tools.mcp_client import MCPClient
 from ..llm.base import BaseLLM
 from ..prompts.loader import PromptLoader
 
+# Try to import RAG engine
+try:
+    from ..tools.rag_engine import RAGEngine
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+
 
 class Researcher:
     """
@@ -31,7 +38,8 @@ class Researcher:
         llm: BaseLLM,
         tavily_api_key: Optional[str] = None,
         mcp_server_url: Optional[str] = None,
-        mcp_api_key: Optional[str] = None
+        mcp_api_key: Optional[str] = None,
+        rag_engine: Optional['RAGEngine'] = None
     ):
         """
         Initialize the Researcher.
@@ -41,11 +49,13 @@ class Researcher:
             tavily_api_key: Tavily API key (optional)
             mcp_server_url: MCP server URL (optional)
             mcp_api_key: MCP API key (optional)
+            rag_engine: RAG engine instance for local document search (optional)
         """
         self.llm = llm
         self.tavily = TavilySearch(tavily_api_key) if tavily_api_key else None
         self.arxiv = ArxivSearch()
         self.mcp = MCPClient(mcp_server_url, mcp_api_key) if mcp_server_url else None
+        self.rag = rag_engine
         self.prompt_loader = PromptLoader()
 
     def execute_task(self, state: ResearchState, task: SubTask) -> ResearchState:
@@ -90,7 +100,7 @@ class Researcher:
 
         Args:
             query: Search query
-            source: Source name ('tavily', 'arxiv', 'mcp')
+            source: Source name ('tavily', 'arxiv', 'mcp', 'rag')
 
         Returns:
             Search results or None
@@ -103,12 +113,55 @@ class Researcher:
             elif source == 'mcp' and self.mcp:
                 import asyncio
                 return asyncio.run(self.mcp.search(query))
+            elif source == 'rag' and self.rag:
+                return self._search_rag(query)
             else:
                 return None
         except Exception as e:
             return {
                 'query': query,
                 'source': source,
+                'results': [],
+                'error': str(e)
+            }
+    
+    def _search_rag(self, query: str) -> SearchResult:
+        """
+        Search local documents using RAG.
+
+        Args:
+            query: Search query
+
+        Returns:
+            Search results in standard format
+        """
+        try:
+            # Search RAG with higher top_k for research
+            rag_results = self.rag.search(query, top_k=10)
+            
+            # Convert RAG results to standard format
+            formatted_results = []
+            for i, result in enumerate(rag_results, 1):
+                metadata = result.get('metadata', {})
+                formatted_results.append({
+                    'title': f"本地文档: {metadata.get('filename', '未知文件')}",
+                    'content': result.get('content', ''),
+                    'url': f"local://{metadata.get('file_path', '')}",
+                    'relevance_score': 1 - result.get('distance', 0) if result.get('distance') else None,
+                    'source': 'rag',
+                    'metadata': metadata
+                })
+            
+            return {
+                'query': query,
+                'source': 'rag',
+                'results': formatted_results,
+                'total_results': len(formatted_results)
+            }
+        except Exception as e:
+            return {
+                'query': query,
+                'source': 'rag',
                 'results': [],
                 'error': str(e)
             }

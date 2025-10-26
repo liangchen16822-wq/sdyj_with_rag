@@ -27,8 +27,25 @@ Create a structured research plan with the following JSON format:
 Guidelines:
 - Break down the research into 3-5 specific subtasks
 - Each subtask should have clear search queries
-- Choose appropriate sources: "tavily" for web search, "arxiv" for academic papers
+- Choose appropriate sources:
+  * "tavily" for web search
+  * "arxiv" for academic papers
+  * "rag" for local document search (always include this to search user's knowledge base)
 - Assign priority (1=highest, 5=lowest)
 - Estimated iterations should be realistic (typically 2-5)
+
+Example with RAG:
+{
+    "research_goal": "Research AI agents",
+    "sub_tasks": [
+        {
+            "task_id": 1,
+            "description": "Search local documents and web",
+            "search_queries": ["AI agents", "multi-agent systems"],
+            "sources": ["rag", "tavily", "arxiv"],
+            "priority": 1
+        }
+    ]
+}
 
 Respond with ONLY the JSON, no additional text.

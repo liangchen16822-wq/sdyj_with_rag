@@ -21,7 +21,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 
-from ..utils.config import load_config_from_env
+from ..utils.config import load_config_from_env, load_config
 from ..utils.logger import setup_logger
 from ..llm.factory import LLMFactory
 from ..agents.coordinator import Coordinator
@@ -29,6 +29,13 @@ from ..agents.planner import Planner
 from ..agents.researcher import Researcher
 from ..agents.rapporteur import Rapporteur
 from ..workflow.graph import ResearchWorkflow
+
+# Import RAG CLI
+try:
+    from .rag_cli import RAGCLI
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
 
 console = Console()
 
@@ -118,14 +125,16 @@ def print_welcome() -> None:
     console.print()
 
 
-def print_menu() -> None:
+def print_menu(has_rag: bool = False) -> None:
     """打印主菜单"""
     console.print("\n[bold cyan]主菜单：[/bold cyan]\n")
     console.print("  [green]1.[/green] 执行研究任务")
     console.print("  [green]2.[/green] 查看可用模型")
     console.print("  [green]3.[/green] 配置设置")
     console.print("  [green]4.[/green] 查看当前配置")
-    console.print("  [green]5.[/green] 退出程序")
+    if has_rag:
+        console.print("  [green]5.[/green] RAG 文档管理")
+    console.print(f"  [green]{'6' if has_rag else '5'}.[/green] 退出程序")
     console.print()
 
 
@@ -345,6 +354,24 @@ def execute_research(config: CLIConfig, query: str = None) -> None:
         env_cfg.workflow.max_iterations = config.max_iterations
         env_cfg.workflow.auto_approve_plan = config.auto_approve
 
+        # Initialize RAG if available
+        rag_engine = None
+        if RAG_AVAILABLE:
+            try:
+                config_path = CONFIG_FILE.parent / "config.json"
+                if config_path.exists():
+                    cfg = load_config(str(config_path))
+                    rag_config = cfg.get('rag', {})
+                    if rag_config.get('enabled', False):
+                        from .rag_cli import RAGCLI
+                        rag_cli_instance = RAGCLI(str(config_path))
+                        if rag_cli_instance.rag_engine:
+                            rag_engine = rag_cli_instance.rag_engine
+                            stats = rag_engine.get_stats()
+                            console.print(f"[dim]✓ RAG 引擎已加载（{stats.get('total_chunks', 0)} 个文档块）[/dim]")
+            except Exception as e:
+                console.print(f"[yellow]⚠ RAG 初始化失败: {e}[/yellow]")
+
         # Create LLM
         console.print(f"[dim]正在初始化 {config.provider.upper()} LLM...[/dim]")
         llm = LLMFactory.create_llm(
@@ -352,7 +379,7 @@ def execute_research(config: CLIConfig, query: str = None) -> None:
             api_key=env_cfg.llm.api_key,
             model=env_cfg.llm.model
         )
-
+        
         # Create agents
         console.print("[dim]正在初始化智能体...[/dim]")
         coordinator = Coordinator(llm)
@@ -361,7 +388,8 @@ def execute_research(config: CLIConfig, query: str = None) -> None:
             llm=llm,
             tavily_api_key=env_cfg.search.tavily_api_key,
             mcp_server_url=env_cfg.search.mcp_server_url,
-            mcp_api_key=env_cfg.search.mcp_api_key
+            mcp_api_key=env_cfg.search.mcp_api_key,
+            rag_engine=rag_engine
         )
         rapporteur = Rapporteur(llm)
 
@@ -484,15 +512,188 @@ def execute_research(config: CLIConfig, query: str = None) -> None:
         print_separator("-")
 
 
+def print_rag_menu() -> None:
+    """打印 RAG 子菜单"""
+    console.print("\n[bold cyan]RAG 文档管理：[/bold cyan]\n")
+    console.print("  [green]1.[/green] 添加文档")
+    console.print("  [green]2.[/green] 添加目录")
+    console.print("  [green]3.[/green] 搜索文档")
+    console.print("  [green]4.[/green] 查看统计信息")
+    console.print("  [green]5.[/green] 清空所有文档")
+    console.print("  [green]6.[/green] 返回主菜单")
+    console.print()
+
+
+def rag_add_documents(rag_cli: RAGCLI) -> None:
+    """添加文档"""
+    print_separator("-")
+    console.print("[bold cyan]添加文档[/bold cyan]\n")
+    
+    console.print("[yellow]请输入文件路径（多个文件用空格分隔）：[/yellow]")
+    file_input = input("> ").strip()
+    
+    if not file_input:
+        console.print("[red]✗ 文件路径不能为空[/red]")
+        return
+    
+    # 分割文件路径
+    file_paths = file_input.split()
+    
+    # 检查文件是否存在
+    valid_paths = []
+    for path in file_paths:
+        if Path(path).exists():
+            valid_paths.append(path)
+        else:
+            console.print(f"[yellow]⚠ 文件不存在，已跳过: {path}[/yellow]")
+    
+    if not valid_paths:
+        console.print("[red]✗ 没有有效的文件路径[/red]")
+        return
+    
+    # 添加文档
+    rag_cli.add_documents(valid_paths)
+    print_separator("-")
+
+
+def rag_add_directory(rag_cli: RAGCLI) -> None:
+    """添加目录中的所有文档"""
+    print_separator("-")
+    console.print("[bold cyan]添加目录[/bold cyan]\n")
+    
+    console.print("[yellow]请输入目录路径：[/yellow]")
+    dir_path = input("> ").strip()
+    
+    if not dir_path:
+        console.print("[red]✗ 目录路径不能为空[/red]")
+        return
+    
+    if not Path(dir_path).is_dir():
+        console.print(f"[red]✗ 目录不存在: {dir_path}[/red]")
+        return
+    
+    # 是否递归搜索
+    recursive_input = input("是否递归搜索子目录？(y/n) [y]: ").strip().lower()
+    recursive = recursive_input in ['', 'y', 'yes', '是']
+    
+    # 文件扩展名过滤
+    console.print("\n[cyan]文件扩展名过滤（可选，留空表示所有支持的文件类型）：[/cyan]")
+    console.print("[dim]示例: .pdf .txt .md[/dim]")
+    ext_input = input("> ").strip()
+    
+    file_extensions = None
+    if ext_input:
+        file_extensions = ext_input.split()
+    
+    # 添加目录
+    rag_cli.add_directory(dir_path, recursive=recursive, file_extensions=file_extensions)
+    print_separator("-")
+
+
+def rag_search_documents(rag_cli: RAGCLI) -> None:
+    """搜索文档"""
+    print_separator("-")
+    console.print("[bold cyan]搜索文档[/bold cyan]\n")
+    
+    console.print("[yellow]请输入搜索查询：[/yellow]")
+    query = input("> ").strip()
+    
+    if not query:
+        console.print("[red]✗ 搜索查询不能为空[/red]")
+        return
+    
+    # 结果数量
+    top_k_input = input(f"返回结果数量 [5]: ").strip()
+    try:
+        top_k = int(top_k_input) if top_k_input else 5
+        if top_k <= 0:
+            top_k = 5
+    except ValueError:
+        top_k = 5
+    
+    # 执行搜索
+    rag_cli.search(query, top_k)
+    print_separator("-")
+
+
+def rag_management_menu(rag_cli: RAGCLI) -> None:
+    """RAG 管理子菜单"""
+    while True:
+        try:
+            print_rag_menu()
+            choice = input("请选择操作 (1-6): ").strip()
+            
+            if choice == "1":
+                # 添加文档
+                rag_add_documents(rag_cli)
+            
+            elif choice == "2":
+                # 添加目录
+                rag_add_directory(rag_cli)
+            
+            elif choice == "3":
+                # 搜索文档
+                rag_search_documents(rag_cli)
+            
+            elif choice == "4":
+                # 查看统计信息
+                print_separator("-")
+                rag_cli.show_stats()
+                print_separator("-")
+            
+            elif choice == "5":
+                # 清空所有文档
+                print_separator("-")
+                rag_cli.clear_collection()
+                print_separator("-")
+            
+            elif choice == "6":
+                # 返回主菜单
+                break
+            
+            else:
+                console.print("[red]✗ 无效的选择，请输入 1-6[/red]")
+        
+        except KeyboardInterrupt:
+            console.print("\n[yellow]返回主菜单[/yellow]")
+            break
+        except Exception as e:
+            console.print(f"\n[red]✗ 发生错误：{e}[/red]\n")
+
+
 def interactive_mode(config: CLIConfig) -> int:
     """交互式菜单模式"""
     print_welcome()
 
+    # Initialize RAG CLI if available
+    rag_cli = None
+    has_rag = False
+    if RAG_AVAILABLE:
+        try:
+            # Try to load config
+            config_path = CONFIG_FILE.parent / "config.json"
+            if config_path.exists():
+                cfg = load_config(str(config_path))
+                rag_config = cfg.get('rag', {})
+                if rag_config.get('enabled', False):
+                    rag_cli = RAGCLI(str(config_path))
+                    has_rag = True
+                    console.print("[green]✓ RAG 功能已启用[/green]\n")
+                else:
+                    console.print("[dim]ℹ RAG 功能未启用（在 config.json 中设置 rag.enabled = true）[/dim]\n")
+            else:
+                console.print("[dim]ℹ 未找到 config.json，RAG 功能不可用[/dim]\n")
+        except Exception as e:
+            console.print(f"[yellow]⚠ RAG 初始化失败: {e}[/yellow]\n")
+    else:
+        console.print("[dim]ℹ RAG 依赖未安装，功能不可用[/dim]\n")
+
     try:
         while True:
             try:
-                print_menu()
-                choice = input("请选择操作 (1-5): ").strip()
+                print_menu(has_rag)
+                max_choice = 6 if has_rag else 5
+                choice = input(f"请选择操作 (1-{max_choice}): ").strip()
 
                 if choice == "1":
                     # 执行研究任务
@@ -533,13 +734,20 @@ def interactive_mode(config: CLIConfig) -> int:
                     console.print()
                     print_separator("-")
 
-                elif choice == "5":
+                elif choice == "5" and has_rag:
+                    # RAG 文档管理
+                    if rag_cli:
+                        rag_management_menu(rag_cli)
+                    else:
+                        console.print("[red]✗ RAG 功能不可用[/red]")
+
+                elif choice == str(max_choice):
                     # 退出程序
                     console.print("\n[yellow]感谢使用 SDYJ 深度研究系统！再见！[/yellow]\n")
                     return 0
 
                 else:
-                    console.print("[red]✗ 无效的选择，请输入 1-5[/red]")
+                    console.print(f"[red]✗ 无效的选择，请输入 1-{max_choice}[/red]")
 
             except KeyboardInterrupt:
                 console.print("\n\n[yellow]感谢使用！再见！[/yellow]\n")

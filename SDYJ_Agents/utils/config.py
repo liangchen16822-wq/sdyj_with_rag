@@ -135,6 +135,22 @@ def load_config_from_file(filepath: str) -> Config:
     return Config(**data)
 
 
+def load_config(filepath: str) -> Dict[str, Any]:
+    """
+    Load configuration from a JSON file as a dictionary.
+
+    Args:
+        filepath: Path to the config file
+
+    Returns:
+        Configuration dictionary
+    """
+    import json
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
 def get_default_config() -> Dict[str, Any]:
     """
     Get default configuration values.
